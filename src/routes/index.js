@@ -7,6 +7,7 @@ const subjectCtrl = require('../controllers/subjectController');
 const timetableCtrl = require('../controllers/timetableController');
 const noteCtrl = require('../controllers/noteController');
 const absenceCtrl = require('../controllers/absenceController');
+const attendanceCtrl = require('../controllers/attendanceController');
 const { protect, adminOnly, facultyOrAdmin } = require('../middleware/auth');
 const upload = require('../config/multer');
 
@@ -59,8 +60,15 @@ router.put('/notes/:id', protect, facultyOrAdmin, upload.array('files', 10), not
 router.delete('/notes/:id/files/:cloudinaryId', protect, facultyOrAdmin, noteCtrl.deleteFile);
 router.delete('/notes/:id', protect, facultyOrAdmin, noteCtrl.deleteNote);
 
-// ─── Absence Cover (Smart Assignment) ────────────────────────────────────────
-router.get('/absence/covers', protect, adminOnly, absenceCtrl.getCovers);
+// ─── Attendance ───────────────────────────────────────────────────────────────
+router.get('/attendance', protect, facultyOrAdmin, attendanceCtrl.getAttendanceSessions);
+router.get('/attendance/summary', protect, facultyOrAdmin, attendanceCtrl.getSummary);
+router.get('/attendance/report/student/:studentId', protect, facultyOrAdmin, attendanceCtrl.getStudentReport);
+router.get('/attendance/:id', protect, facultyOrAdmin, attendanceCtrl.getSessionById);
+router.post('/attendance', protect, facultyOrAdmin, attendanceCtrl.markAttendance);
+router.delete('/attendance/:id', protect, facultyOrAdmin, attendanceCtrl.deleteSession);
+
+// ─── Absence Cover (Smart Assignment) ────────────────────────────────────────router.get('/absence/covers', protect, adminOnly, absenceCtrl.getCovers);
 router.get('/absence/suggestions', protect, adminOnly, absenceCtrl.getCoverSuggestions);
 router.get('/absence/completion-report', protect, adminOnly, absenceCtrl.getCompletionReport);
 router.post('/absence/report', protect, adminOnly, absenceCtrl.reportAbsence);
