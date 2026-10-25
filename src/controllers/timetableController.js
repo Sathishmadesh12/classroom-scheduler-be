@@ -15,6 +15,8 @@ const TIME_SLOTS = [
   { period: 8, startTime: '16:15', endTime: '17:15' },
 ];
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+// Lab sessions need 2 back-to-back periods that do not cross the tea / lunch break
+const LAB_BLOCKS = [[1, 2], [3, 4], [5, 6], [7, 8]];
 
 exports.getTimetables = async (req, res) => {
   try {
@@ -142,6 +144,7 @@ exports.generateTimetable = async (req, res) => {
     const facultyBusy = {};
     const classroomBusy = {};
     const slots = [];
+    const unscheduled = [];
 
     for (const subject of subjects) {
       const hoursNeeded = subject.hoursPerWeek || 3;
@@ -162,21 +165,57 @@ exports.generateTimetable = async (req, res) => {
       const roomId = suitableRoom._id.toString();
       if (!classroomBusy[roomId]) classroomBusy[roomId] = new Set();
 
-      for (const day of DAYS) {
-        if (hoursAssigned >= hoursNeeded) break;
-        for (const slot of TIME_SLOTS) {
-          if (hoursAssigned >= hoursNeeded) break;
-          const key = `${day}-${slot.period}`;
-          if (facultyBusy[facultyId].has(key)) continue;
-          if (classroomBusy[roomId].has(key)) continue;
-          const slotExists = slots.find((s) => s.day === day && s.period === slot.period);
-          if (slotExists) continue;
+      // ── Spread the subject across the week ──────────────────────────────────
+      // FIX: a subject used to fill Monday P1,P2,P3 before moving to Tuesday, so the
+      // same subject appeared 3 times in one day and Thu/Fri stayed empty.
+      // Now: theory = max 1 period/day (more only if hours > 5), lab = one 2-period block/day,
+      // and every placement goes to the least-loaded day.
+      const isLab = subject.type === 'lab';
+      const maxPerDay = isLab ? 2 : Math.max(1, Math.ceil(hoursNeeded / DAYS.length));
+      const startOffset = subjects.indexOf(subject) % DAYS.length; // rotate start day per subject
+      const sid = subject._id.toString();
 
-          facultyBusy[facultyId].add(key);
-          classroomBusy[roomId].add(key);
-          slots.push({ day, period: slot.period, startTime: slot.startTime, endTime: slot.endTime, subject: subject._id, faculty: faculty._id, classroom: suitableRoom._id });
-          hoursAssigned++;
+      const isFree = (day, period) => {
+        const key = `${day}-${period}`;
+        return !facultyBusy[facultyId].has(key)
+          && !classroomBusy[roomId].has(key)
+          && !slots.some((s) => s.day === day && s.period === period);
+      };
+      const place = (day, period) => {
+        const ts = TIME_SLOTS.find((t) => t.period === period);
+        const key = `${day}-${period}`;
+        facultyBusy[facultyId].add(key);
+        classroomBusy[roomId].add(key);
+        slots.push({ day, period, startTime: ts.startTime, endTime: ts.endTime, subject: subject._id, faculty: faculty._id, classroom: suitableRoom._id });
+        hoursAssigned++;
+      };
+
+      while (hoursAssigned < hoursNeeded) {
+        const candidateDays = DAYS
+          .map((day, i) => ({
+            day,
+            sameSubject: slots.filter((s) => s.day === day && s.subject.toString() === sid).length,
+            load: slots.filter((s) => s.day === day).length,
+            order: (i - startOffset + DAYS.length) % DAYS.length,
+          }))
+          .filter((d) => d.sameSubject < maxPerDay)
+          .sort((a, b) => a.sameSubject - b.sameSubject || a.load - b.load || a.order - b.order);
+
+        let placed = false;
+        for (const { day, sameSubject } of candidateDays) {
+          if (isLab && hoursNeeded - hoursAssigned >= 2 && sameSubject === 0) {
+            const block = LAB_BLOCKS.find(([a, b]) => isFree(day, a) && isFree(day, b));
+            if (block) { block.forEach((p) => place(day, p)); placed = true; break; }
+            continue;
+          }
+          const slot = TIME_SLOTS.find((t) => isFree(day, t.period));
+          if (slot) { place(day, slot.period); placed = true; break; }
         }
+        if (!placed) break; // no more room for this subject
+      }
+
+      if (hoursAssigned < hoursNeeded) {
+        unscheduled.push(`${subject.name} (${hoursAssigned}/${hoursNeeded} hrs placed)`);
       }
     }
 
@@ -207,7 +246,7 @@ exports.generateTimetable = async (req, res) => {
 
     res.status(201).json({
       success: true, timetable: populated,
-      message: `Timetable generated with ${slots.length} slots. Emails sent to ${facultySlotMap.size} faculty.`,
+      message: `Timetable generated with ${slots.length} slots. Emails sent to ${facultySlotMap.size} faculty.` + (unscheduled.length ? ` Could not fully place: ${unscheduled.join(', ')}.` : ''),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authCtrl = require('../controllers/authController');
 const userCtrl = require('../controllers/userController');
+const importCtrl = require('../controllers/importController');
 const classroomCtrl = require('../controllers/classroomController');
 const subjectCtrl = require('../controllers/subjectController');
 const timetableCtrl = require('../controllers/timetableController');
@@ -10,6 +11,7 @@ const absenceCtrl = require('../controllers/absenceController');
 const attendanceCtrl = require('../controllers/attendanceController');
 const { protect, adminOnly, facultyOrAdmin } = require('../middleware/auth');
 const upload = require('../config/multer');
+const { csvUpload } = require('../config/multer');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 router.post('/auth/register', authCtrl.register);
@@ -26,6 +28,10 @@ router.get('/users/:id', protect, userCtrl.getUserById);
 router.put('/users/:id', protect, adminOnly, userCtrl.updateUser);
 router.delete('/users/:id', protect, adminOnly, userCtrl.deleteUser);
 router.patch('/users/:id/toggle-status', protect, adminOnly, userCtrl.toggleUserStatus);
+
+// ─── Bulk Import ──────────────────────────────────────────────────────────────
+router.post('/users/import-faculty', protect, adminOnly, csvUpload.single('file'), importCtrl.importFaculty);
+router.post('/users/import-students', protect, adminOnly, csvUpload.single('file'), importCtrl.importStudents);
 
 // ─── Classrooms ───────────────────────────────────────────────────────────────
 router.get('/classrooms', protect, classroomCtrl.getAllClassrooms);
@@ -74,5 +80,8 @@ router.get('/absence/completion-report', protect, adminOnly, absenceCtrl.getComp
 router.post('/absence/report', protect, adminOnly, absenceCtrl.reportAbsence);
 router.patch('/absence/covers/:id/status', protect, adminOnly, absenceCtrl.updateCoverStatus);
 router.patch('/absence/subjects/:subjectId/completion', protect, facultyOrAdmin, absenceCtrl.updateCompletion);
+
+// ─── Extra modules (Announcements, Reports) ───────────────────────────────────
+router.use('/', require('./extra'));
 
 module.exports = router;
